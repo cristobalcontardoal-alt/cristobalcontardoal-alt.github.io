@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Convertidor a PDF para la yuyu</title>
+    <!-- Cargamos Tailwind CSS para dejarlo facherito -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Cargamos jsPDF, la librería mágica que arma el PDF en el navegador -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <!-- Iconos bonitos -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* Unas animaciones locas para el drag and drop */
+        .drop-zone-active {
+            border-color: #3b82f6 !important;
+            background-color: #eff6ff !important;
+            transform: scale(1.02);
+        }
+        transition: all 0.3s ease;
+    </style>
+</head>
+<body class="bg-gradient-to-br from-gray-100 to-gray-300 min-h-screen flex items-center justify-center p-4 font-sans text-gray-800">
+
+    <div class="bg-white rounded-3xl shadow-2xl p-8 max-w-lg w-full transition-all duration-300">
+        <!-- Encabezado -->
+        <div class="text-center mb-8">
+            <div class="bg-blue-100 text-blue-600 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 shadow-inner">
+                <i data-lucide="file-image" class="w-8 h-8"></i>
+            </div>
+            <h1 class="text-3xl font-extrabold text-gray-900 mb-2">JPG a PDF</h1>
+            <p class="text-gray-500 text-sm">Ya yuyi, convierte tus imágenes a pdf.</p>
+        </div>
+
+        <!-- Zona de Drag & Drop -->
+        <div id="drop-zone" class="border-3 border-dashed border-gray-300 rounded-2xl p-8 text-center cursor-pointer hover:border-blue-500 hover:bg-gray-50 transition-all duration-200 relative overflow-hidden group">
+            
+            <input type="file" id="file-input" accept="image/jpeg, image/png, image/jpg" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+            
+            <div id="upload-content" class="flex flex-col items-center justify-center space-y-3 pointer-events-none">
+                <i data-lucide="upload-cloud" class="w-10 h-10 text-gray-400 group-hover:text-blue-500 transition-colors"></i>
+                <div class="text-gray-600 font-medium text-lg">Haz clic o arrastra tu imagen aquí</div>
+                <div class="text-xs text-gray-400">Soporta JPG y PNG</div>
+            </div>
+
+            <!-- Aquí mostraremos la vista previa de la imagen -->
+            <div id="preview-container" class="hidden flex flex-col items-center pointer-events-none z-0">
+                <img id="image-preview" src="" alt="Vista previa" class="max-h-48 rounded-lg shadow-md mb-2 object-contain">
+                <p id="file-name" class="text-sm text-gray-600 font-medium truncate w-full px-4"></p>
+            </div>
+        </div>
+
+        <!-- Botones de Acción -->
+        <div class="mt-8 space-y-4">
+            <button id="convert-btn" disabled class="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-bold py-4 px-6 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 flex items-center justify-center space-x-2">
+                <i data-lucide="file-down" class="w-5 h-5"></i>
+                <span>Convertir a PDF</span>
+            </button>
+            
+            <button id="reset-btn" class="hidden w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-3 px-6 rounded-xl transition-colors duration-200 flex items-center justify-center space-x-2">
+                <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                <span>Convertir otra imagen</span>
+            </button>
+        </div>
+
+        <div class="mt-6 text-center text-xs text-gray-400">
+            Desarrollado con ❤️ para tu dominio propio.
+        </div>
+    </div>
+
+    <script>
+        // Inicializamos los íconos de Lucide
+        lucide.createIcons();
+
+        // Variables de estado y elementos del DOM
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const uploadContent = document.getElementById('upload-content');
+        const previewContainer = document.getElementById('preview-container');
+        const imagePreview = document.getElementById('image-preview');
+        const fileNameDisplay = document.getElementById('file-name');
+        const convertBtn = document.getElementById('convert-btn');
+        const resetBtn = document.getElementById('reset-btn');
+
+        let currentFile = null;
+        let currentImageDataUrl = null;
+
+        // --- MANEJO DEL DRAG AND DROP ---
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => {
+                dropZone.classList.add('drop-zone-active');
+            }, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => {
+                dropZone.classList.remove('drop-zone-active');
+            }, false);
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            handleFiles(files);
+        });
+
+        // --- MANEJO DEL INPUT TRADICIONAL ---
+        fileInput.addEventListener('change', function() {
+            handleFiles(this.files);
+        });
+
+        function handleFiles(files) {
+            if (files.length === 0) return;
+            
+            const file = files[0];
+            
+            // Verificamos que sea una imagen
+            if (!file.type.match('image.*')) {
+                alert('¡Epa! Tienes que subir una imagen po, perrito.');
+                return;
+            }
+
+            currentFile = file;
+            fileNameDisplay.textContent = file.name;
+
+            // Leemos el archivo usando FileReader (Magia de HTML5 del lado del cliente)
+            const reader = new FileReader();
+            
+            reader.onload = (e) => {
+                currentImageDataUrl = e.target.result;
+                imagePreview.src = currentImageDataUrl;
+                
+                // Cambiamos la UI para mostrar la foto
+                uploadContent.classList.add('hidden');
+                previewContainer.classList.remove('hidden');
+                
+                // Habilitamos el botón
+                convertBtn.disabled = false;
+                convertBtn.classList.remove('opacity-50');
+            };
+
+            reader.readAsDataURL(file);
+        }
+
+        // --- LÓGICA DE CONVERSIÓN A PDF ---
+        convertBtn.addEventListener('click', () => {
+            if (!currentImageDataUrl) return;
+
+            // Cambiamos texto del botón para feedback visual
+            const originalText = convertBtn.innerHTML;
+            convertBtn.innerHTML = '<i data-lucide="loader-2" class="w-5 h-5 animate-spin"></i><span>Procesando...</span>';
+            lucide.createIcons();
+            convertBtn.disabled = true;
+
+            // Usamos un setTimeout chiquitito para que el navegador alcance a renderizar el "Procesando..."
+            setTimeout(() => {
+                try {
+                    // Sacamos la clase jsPDF del objeto window
+                    const { jsPDF } = window.jspdf;
+                    
+                    // Creamos un documento nuevo tamaño A4 por defecto (puedes cambiarlo a letter, etc)
+                    const doc = new jsPDF();
+                    
+                    // Obtenemos dimensiones de la página A4 en mm
+                    const pageWidth = doc.internal.pageSize.getWidth();
+                    const pageHeight = doc.internal.pageSize.getHeight();
+
+                    // Necesitamos saber las dimensiones reales de la imagen para que no se deforme
+                    const img = new Image();
+                    img.src = currentImageDataUrl;
+                    
+                    img.onload = function() {
+                        // Calculamos la proporción (aspect ratio) de la imagen
+                        const imgRatio = img.width / img.height;
+                        
+                        // Ajustamos la imagen para que quepa en el ancho de la página
+                        let finalWidth = pageWidth;
+                        let finalHeight = finalWidth / imgRatio;
+
+                        // Si al ajustarla al ancho, se sale del alto de la página, la ajustamos por el alto
+                        if (finalHeight > pageHeight) {
+                            finalHeight = pageHeight;
+                            finalWidth = finalHeight * imgRatio;
+                        }
+
+                        // Centramos la imagen en el PDF
+                        const x = (pageWidth - finalWidth) / 2;
+                        const y = (pageHeight - finalHeight) / 2;
+
+                        // ¡Agregamos la imagen al PDF! (Soporta JPEG, PNG, WEBP)
+                        doc.addImage(currentImageDataUrl, 'JPEG', x, y, finalWidth, finalHeight);
+                        
+                        // Generamos el nombre del archivo de salida
+                        const outName = currentFile.name.split('.')[0] + '_convertido.pdf';
+                        
+                        // Forzamos la descarga
+                        doc.save(outName);
+
+                        // Reseteamos el botón y mostramos la opción de hacer otro
+                        convertBtn.innerHTML = '<i data-lucide="check-circle" class="w-5 h-5"></i><span>¡Listo! Descargado</span>';
+                        lucide.createIcons();
+                        
+                        setTimeout(() => {
+                            convertBtn.classList.add('hidden');
+                            resetBtn.classList.remove('hidden');
+                        }, 1500);
+                    };
+                } catch (error) {
+                    console.error("Pucha, hubo un error:", error);
+                    alert("Hubo un drama al convertir la imagen. Intenta con otra.");
+                    convertBtn.innerHTML = originalText;
+                    convertBtn.disabled = false;
+                }
+            }, 100); // 100ms de delay
+        });
+
+        // --- RESETEAR LA HERRAMIENTA ---
+        resetBtn.addEventListener('click', () => {
+            currentFile = null;
+            currentImageDataUrl = null;
+            fileInput.value = '';
+            
+            uploadContent.classList.remove('hidden');
+            previewContainer.classList.add('hidden');
+            imagePreview.src = '';
+            
+            convertBtn.classList.remove('hidden');
+            resetBtn.classList.add('hidden');
+            
+            convertBtn.disabled = true;
+            convertBtn.innerHTML = '<i data-lucide="file-down" class="w-5 h-5"></i><span>Convertir a PDF</span>';
+            lucide.createIcons();
+        });
+
+    </script>
+</body>
+</html>
