@@ -8,6 +8,8 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Cargamos jsPDF, la librería mágica que arma el PDF en el navegador -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <!-- Cargamos pdf-lib, la mansa librería para manipular y unir PDFs existentes -->
+    <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
     <!-- Iconos bonitos -->
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
@@ -20,15 +22,15 @@
         transition: all 0.3s ease;
     </style>
 </head>
-<body class="bg-gradient-to-br from-gray-100 to-gray-300 min-h-screen flex items-center justify-center p-4 font-sans text-gray-800">
+<body class="bg-gradient-to-br from-gray-100 to-gray-300 min-h-screen flex flex-col items-center justify-start md:justify-center p-4 py-10 font-sans text-gray-800">
 
-    <div class="bg-white rounded-3xl shadow-2xl p-8 max-w-lg w-full transition-all duration-300">
-        <!-- Encabezado -->
-        <div class="text-center mb-8">
-            <div class="bg-blue-100 text-blue-600 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 shadow-inner">
-                <i data-lucide="file-image" class="w-8 h-8"></i>
-            </div>
-            <h1 class="text-3xl font-extrabold text-gray-900 mb-2">JPG a PDF</h1>
+    <!-- Contenedor principal para apilar las dos herramientas -->
+    <div class="flex flex-col gap-8 w-full max-w-lg">
+        
+        <!-- TARJETA 1: Convertidor JPG a PDF (El que ya teníamos) -->
+        <div class="bg-white rounded-3xl shadow-2xl p-8 w-full transition-all duration-300">
+            <!-- Encabezado -->
+            <div class="text-center mb-8">
             <p class="text-gray-500 text-sm">Ya yuyi, convierte tus imágenes a pdf.</p>
         </div>
 
@@ -64,9 +66,49 @@
         </div>
 
         <div class="mt-6 text-center text-xs text-gray-400">
-            Desarrollado con ❤️
+            Desarrollado con ❤️ 
         </div>
     </div>
+
+        <!-- TARJETA 2: NUEVA SECCIÓN PARA UNIR PDFs -->
+        <div class="bg-white rounded-3xl shadow-2xl p-8 w-full transition-all duration-300">
+            <div class="text-center mb-8">
+                <div class="bg-purple-100 text-purple-600 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 shadow-inner">
+                    <i data-lucide="layers" class="w-8 h-8"></i>
+                </div>
+                <h2 class="text-3xl font-extrabold text-gray-900 mb-2">Unir PDFs</h2>
+                <p class="text-gray-500 text-sm">Sube varios PDFs y fusiónalos en uno solo</p>
+            </div>
+
+            <!-- Zona de Drag & Drop para PDFs -->
+            <div id="merge-drop-zone" class="border-3 border-dashed border-gray-300 rounded-2xl p-8 text-center cursor-pointer hover:border-purple-500 hover:bg-gray-50 transition-all duration-200 relative overflow-hidden group">
+                <input type="file" id="merge-file-input" accept="application/pdf" multiple class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+                
+                <div id="merge-upload-content" class="flex flex-col items-center justify-center space-y-3 pointer-events-none">
+                    <i data-lucide="file-plus-2" class="w-10 h-10 text-gray-400 group-hover:text-purple-500 transition-colors"></i>
+                    <div class="text-gray-600 font-medium text-lg">Haz clic o arrastra tus PDFs</div>
+                    <div class="text-xs text-gray-400">Selecciona 2 o más archivos .pdf</div>
+                </div>
+
+                <div id="merge-preview-container" class="hidden flex flex-col items-center pointer-events-none z-0 w-full">
+                    <ul id="merge-file-list" class="text-sm text-gray-600 font-medium w-full text-left space-y-2 max-h-40 overflow-y-auto px-2 pointer-events-auto"></ul>
+                </div>
+            </div>
+
+            <div class="mt-8 space-y-4">
+                <button id="merge-btn" disabled class="w-full bg-purple-600 hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-bold py-4 px-6 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 flex items-center justify-center space-x-2">
+                    <i data-lucide="combine" class="w-5 h-5"></i>
+                    <span>Unir y Descargar PDF</span>
+                </button>
+                
+                <button id="merge-reset-btn" class="hidden w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-3 px-6 rounded-xl transition-colors duration-200 flex items-center justify-center space-x-2">
+                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    <span>Limpiar lista</span>
+                </button>
+            </div>
+        </div>
+
+    </div> <!-- Cierre del contenedor flex principal -->
 
     <script>
         // Inicializamos los íconos de Lucide
@@ -239,6 +281,145 @@
             convertBtn.disabled = true;
             convertBtn.innerHTML = '<i data-lucide="file-down" class="w-5 h-5"></i><span>Convertir a PDF</span>';
             lucide.createIcons();
+        });
+
+        // ==========================================
+        // --- LÓGICA DE UNIR PDFs (NUEVA SECCIÓN) ---
+        // ==========================================
+        
+        const mergeDropZone = document.getElementById('merge-drop-zone');
+        const mergeFileInput = document.getElementById('merge-file-input');
+        const mergeUploadContent = document.getElementById('merge-upload-content');
+        const mergePreviewContainer = document.getElementById('merge-preview-container');
+        const mergeFileListUI = document.getElementById('merge-file-list');
+        const mergeBtn = document.getElementById('merge-btn');
+        const mergeResetBtn = document.getElementById('merge-reset-btn');
+
+        let pdfFilesToMerge = [];
+
+        // Eventos pa' la cajita de soltar archivos
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            mergeDropZone.addEventListener(eventName, preventDefaults, false);
+        });
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            mergeDropZone.addEventListener(eventName, () => mergeDropZone.classList.add('drop-zone-active'), false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            mergeDropZone.addEventListener(eventName, () => mergeDropZone.classList.remove('drop-zone-active'), false);
+        });
+
+        mergeDropZone.addEventListener('drop', (e) => handleMergeFiles(e.dataTransfer.files));
+        mergeFileInput.addEventListener('change', function() { handleMergeFiles(this.files); });
+
+        function handleMergeFiles(files) {
+            // Filtramos pa asegurarnos de que solo suban la hueá que pedimos (puros PDFs)
+            const newFiles = Array.from(files).filter(file => file.type === 'application/pdf');
+            
+            if (newFiles.length === 0) {
+                alert('Pucha yuyi, acá solo se aceptan archivos PDF pa unirlos.');
+                return;
+            }
+
+            // Metemos los nuevos archivos al arreglo
+            pdfFilesToMerge = [...pdfFilesToMerge, ...newFiles];
+            updateMergeUI();
+        }
+
+        function updateMergeUI() {
+            mergeFileListUI.innerHTML = ''; // Limpiamos la lista visual antes de repintar
+            
+            pdfFilesToMerge.forEach((file, index) => {
+                const li = document.createElement('li');
+                li.className = 'flex items-center space-x-3 bg-white p-3 rounded-lg border border-gray-200 shadow-sm';
+                li.innerHTML = `
+                    <i data-lucide="file-text" class="w-5 h-5 text-purple-500 flex-shrink-0"></i>
+                    <span class="truncate w-full text-gray-700 font-medium">${file.name}</span>
+                `;
+                mergeFileListUI.appendChild(li);
+            });
+            
+            lucide.createIcons();
+
+            if (pdfFilesToMerge.length > 0) {
+                mergeUploadContent.classList.add('hidden');
+                mergePreviewContainer.classList.remove('hidden');
+                mergeResetBtn.classList.remove('hidden');
+            }
+
+            // Habilitamos el botón solo si hay 2 o más PDFs en la lista
+            if (pdfFilesToMerge.length >= 2) {
+                mergeBtn.disabled = false;
+            } else {
+                mergeBtn.disabled = true;
+            }
+        }
+
+        mergeBtn.addEventListener('click', async () => {
+            if (pdfFilesToMerge.length < 2) return;
+
+            const originalText = mergeBtn.innerHTML;
+            mergeBtn.innerHTML = '<i data-lucide="loader-2" class="w-5 h-5 animate-spin"></i><span>Uniendo los papeles...</span>';
+            lucide.createIcons();
+            mergeBtn.disabled = true;
+
+            try {
+                // Sacamos PDFDocument de la librería global de pdf-lib
+                const { PDFDocument } = window.PDFLib;
+                
+                // Creamos un documento PDF maestro y en blanco
+                const mergedPdf = await PDFDocument.create();
+
+                // Recorremos cada archivo subido, lo decodificamos y le robamos las páginas
+                for (const file of pdfFilesToMerge) {
+                    const arrayBuffer = await file.arrayBuffer();
+                    const pdf = await PDFDocument.load(arrayBuffer);
+                    const copiedPages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
+                    copiedPages.forEach((page) => mergedPdf.addPage(page));
+                }
+
+                // Compilamos la mansa obra de arte final a bytes
+                const mergedPdfBytes = await mergedPdf.save();
+                
+                // Magia de JS pa meter esos bytes a un Blob y forzar la descarga
+                const blob = new Blob([mergedPdfBytes], { type: 'application/pdf' });
+                const url = URL.createObjectURL(blob);
+                
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'PDFs_Unidos_Pa_La_Yuyu.pdf';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url); // Liberamos memoria, hay que ser limpiecitos
+
+                mergeBtn.innerHTML = '<i data-lucide="check-circle" class="w-5 h-5"></i><span>¡Todo unido y descargado!</span>';
+                lucide.createIcons();
+                
+                setTimeout(() => {
+                    mergeBtn.innerHTML = originalText;
+                    mergeBtn.disabled = false;
+                    lucide.createIcons();
+                }, 2500);
+
+            } catch (error) {
+                console.error("Quedó la escoba uniendo:", error);
+                alert("Chuta, hubo un drama al unir los PDFs. Fíjate que no estén corruptos o con contraseña po.");
+                mergeBtn.innerHTML = originalText;
+                mergeBtn.disabled = false;
+            }
+        });
+
+        // Pa limpiar la lista y empezar de cero
+        mergeResetBtn.addEventListener('click', () => {
+            pdfFilesToMerge = [];
+            mergeFileInput.value = '';
+            mergeUploadContent.classList.remove('hidden');
+            mergePreviewContainer.classList.add('hidden');
+            mergeResetBtn.classList.add('hidden');
+            mergeBtn.disabled = true;
+            mergeFileListUI.innerHTML = '';
         });
 
     </script>
